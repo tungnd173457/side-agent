@@ -1,7 +1,7 @@
 import React from 'react';
-import { MessageSquare, Bot } from 'lucide-react';
+import { MessageSquare, Bot, Bug } from 'lucide-react';
 
-export type AppMode = 'chat' | 'agent';
+export type AppMode = 'chat' | 'agent' | 'debug';
 
 interface SidebarProps {
     activeMode: AppMode;
@@ -18,6 +18,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeMode, onModeChange }) => {
     const items: SidebarItem[] = [
         { mode: 'chat', icon: <MessageSquare className="w-5 h-5" />, label: 'Chat' },
         { mode: 'agent', icon: <Bot className="w-5 h-5" />, label: 'Agent' },
+        { mode: 'debug', icon: <Bug className="w-5 h-5" />, label: 'Debug' },
     ];
 
     return (
