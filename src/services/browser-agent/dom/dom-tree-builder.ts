@@ -431,19 +431,6 @@ export function buildDOMTree(options: {
             // EXCEPTION: file inputs are often hidden but functional
             const isFileInput = tag === 'input' && el.getAttribute('type') === 'file';
 
-            // ── Bounding-box propagation exclusion ────────────────────────────────
-            // If parent is a propagating element (a, button, span role=button, etc.)
-            // and this child is sufficiently contained within parent's bounds,
-            // mark it excluded — it won't get its own index.
-            // Mirrors browser-use's _apply_bounding_box_filtering.
-            let excludedByParent = false;
-            if (activeBounds && vis) {
-                const childRect = el.getBoundingClientRect();
-                if (isContainedInBounds(childRect, activeBounds, CONTAINMENT_THRESHOLD)) {
-                    excludedByParent = true;
-                }
-            }
-
             // ── Determine if this element propagates its bounds to children ───────
             const elRole = el.getAttribute('role');
             let nextActiveBounds = activeBounds;
@@ -453,6 +440,28 @@ export function buildDOMTree(options: {
             if (isPropagating && vis) {
                 // This element's bounds will be used to exclude contained children
                 nextActiveBounds = el.getBoundingClientRect();
+            }
+
+            // ── Bounding-box propagation exclusion ────────────────────────────────
+            // If parent is a propagating element (a, button, span role=button, etc.)
+            // and this child is sufficiently contained within parent's bounds,
+            // mark it excluded — it won't get its own index.
+            // Mirrors browser-use's _apply_bounding_box_filtering.
+            let excludedByParent = false;
+
+            // EXCEPTION RULES - Keep these even if contained
+            const isContainmentException =
+                tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'label' ||
+                isPropagating ||
+                el.hasAttribute('onclick') ||
+                (el.getAttribute('aria-label') || '').trim().length > 0 ||
+                ['button', 'link', 'checkbox', 'radio', 'tab', 'menuitem', 'option'].includes(elRole || '');
+
+            if (activeBounds && vis && !isContainmentException) {
+                const childRect = el.getBoundingClientRect();
+                if (isContainedInBounds(childRect, activeBounds, CONTAINMENT_THRESHOLD)) {
+                    excludedByParent = true;
+                }
             }
 
             // Skip completely invisible elements (unless file input or has children)
@@ -480,9 +489,11 @@ export function buildDOMTree(options: {
             if (!isSvg) {
                 for (const child of node.childNodes) {
                     if (child.nodeType === Node.TEXT_NODE) {
-                        const text = child.textContent?.trim();
-                        if (text && text.length > 0) {
-                            textNodes.push(text.slice(0, 200));
+                        if (vis) {
+                            const text = child.textContent?.trim();
+                            if (text && text.length > 0) {
+                                textNodes.push(text.slice(0, 200));
+                            }
                         }
                     } else {
                         const r = walkDOM(child, depth + 1, nextActiveBounds);
@@ -513,17 +524,22 @@ export function buildDOMTree(options: {
         const lines: string[] = [];
         const indent = '\t'.repeat(depth);
 
-        // Handle SVG — collapsed
-        if (info.isSvg) {
-            if (info.isInteractive) {
-                const idx = interactiveIdx++;
-                interactiveCount.value++;
-                info.el.setAttribute('data-ba-idx', String(idx));
-                const attrStr = buildAttrString(info.el);
-                lines.push(`${indent}[${idx}]<svg${attrStr ? ' ' + attrStr : ''} /> <!-- SVG -->`);
-            }
-            return lines.join('\n');
-        }
+        // // Handle SVG — collapsed
+        // if (info.isSvg) {
+        //     // Completely skip if excluded by bounding box propagation or invisible
+        //     if (info.excludedByParent || !info.isVisible) return '';
+
+        //     let line = indent;
+        //     if (info.isInteractive) {
+        //         const idx = interactiveIdx++;
+        //         interactiveCount.value++;
+        //         info.el.setAttribute('data-ba-idx', String(idx));
+        //         line += `[${idx}]`;
+        //     }
+        //     const attrStr = buildAttrString(info.el);
+        //     line += `<svg${attrStr ? ' ' + attrStr : ''} /> <!-- SVG -->`;
+        //     return line;
+        // }
 
         // Determine if this node needs to be rendered
         const shouldRender =
