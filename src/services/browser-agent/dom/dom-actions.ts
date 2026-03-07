@@ -329,12 +329,54 @@ export function waitForElement(
 ): Promise<{ success: boolean; found: boolean; error?: string }> {
     return new Promise((resolve) => {
         function _isElementVisible(el: Element): boolean {
+            // HTML attribute check
+            if (el.hasAttribute('hidden')) return false;
+
+            // Collapsed <details> check
+            if (!el.closest('summary')) {
+                const closestDetails = el.closest('details');
+                if (closestDetails && !closestDetails.hasAttribute('open') && closestDetails !== el) {
+                    return false;
+                }
+            }
+
+            // Bounding rect check
             const rect = el.getBoundingClientRect();
-            if (rect.width === 0 && rect.height === 0) return false;
-            try {
-                const style = window.getComputedStyle(el);
-                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-            } catch { return true; }
+            if (rect.width === 0 || rect.height === 0) return false;
+
+            // Computed style chain walk — check el and all ancestors
+            let current: Element | null = el;
+            while (current) {
+                try {
+                    const s = window.getComputedStyle(current);
+                    if (
+                        s.display === 'none' ||
+                        s.visibility === 'hidden' ||
+                        s.visibility === 'collapse' ||
+                        s.opacity === '0'
+                    ) {
+                        return false;
+                    }
+                    if (
+                        s.clip === 'rect(0px, 0px, 0px, 0px)' ||
+                        s.clipPath === 'inset(100%)'
+                    ) {
+                        return false;
+                    }
+                } catch {
+                    break;
+                }
+                current = current.parentElement;
+            }
+
+            // Tiny element with overflow hidden
+            if (rect.width <= 1 && rect.height <= 1) {
+                try {
+                    const s = window.getComputedStyle(el);
+                    if (s.overflow === 'hidden') return false;
+                } catch { /* skip */ }
+            }
+
             return true;
         }
 

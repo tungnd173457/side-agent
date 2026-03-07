@@ -75,7 +75,8 @@ export function buildDOMTree(options: {
     const INCLUDE_ATTRIBUTES = options.includeAttributes ?? [
         'title', 'type', 'checked', 'id', 'name', 'role', 'value',
         'placeholder', 'alt', 'aria-label', 'aria-expanded', 'aria-checked',
-        'aria-selected', 'data-state', 'disabled', 'readonly', 'required',
+        'aria-selected', 'aria-required', 'aria-disabled', 'aria-hidden',
+        'data-state', 'disabled', 'readonly', 'required',
         'selected', 'href', 'src', 'for', 'action', 'method',
         'pattern', 'min', 'max', 'minlength', 'maxlength', 'step',
         'accept', 'multiple', 'inputmode', 'autocomplete', 'contenteditable',
