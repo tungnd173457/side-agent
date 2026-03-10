@@ -1,6 +1,5 @@
 // Browser Agent - DOM Tree Builder
 // Builds an enhanced DOM tree from the live page DOM.
-// Adapted from browser-use's service.py:get_dom_tree and _construct_enhanced_node.
 // Runs in page context via chrome.scripting.executeScript.
 
 // ============================================================
@@ -14,7 +13,6 @@
  * It walks the entire DOM, identifies interactive elements, builds a simplified tree,
  * and serializes it into text format for LLM consumption.
  *
- * Adapted from browser-use's DomService.get_dom_tree + DOMTreeSerializer.
  */
 export function buildDOMTree(options: {
     maxDepth?: number;
@@ -55,7 +53,7 @@ export function buildDOMTree(options: {
         'data-onclick', 'jsaction', '(click)', 'data-ng-click', 'data-ember-action',
     ]);
 
-    // Search element class/id indicators (from browser-use)
+    // Search element class/id indicators
     const SEARCH_INDICATORS_SET = new Set([
         'search', 'magnify', 'glass', 'lookup', 'find', 'query',
         'search-icon', 'search-btn', 'search-button', 'searchbox',
@@ -74,7 +72,6 @@ export function buildDOMTree(options: {
 
     // Elements that propagate bounds to their children.
     // Children fully contained within these elements are NOT indexed separately.
-    // Mirrors browser-use's DOMTreeSerializer.PROPAGATING_ELEMENTS.
     const PROPAGATING_ELEMENTS: Array<{ tag: string; role: string | null }> = [
         { tag: 'a', role: null },           // Any <a>
         { tag: 'button', role: null },           // Any <button>
@@ -201,7 +198,6 @@ export function buildDOMTree(options: {
         if (el.getAttribute('contenteditable') === 'false') return false;
 
         // ── Large iframes need interaction (e.g. scrolling their content) ────
-        // Mirrors browser-use: iframes > 100×100px are treated as interactive.
         if (tag === 'iframe' || tag === 'frame') {
             const r = el.getBoundingClientRect();
             return r.width > 100 && r.height > 100;
@@ -223,7 +219,6 @@ export function buildDOMTree(options: {
         if ((tag === 'span' || tag === 'div') && hasFormControl(el, 2)) return true;
 
         // ── Search element heuristic ──────────────────────────────────────────
-        // Matches browser-use's search_indicators detection.
         {
             const cls = (el.getAttribute('class') || '').toLowerCase();
             const id = (el.getAttribute('id') || '').toLowerCase();
@@ -242,9 +237,7 @@ export function buildDOMTree(options: {
 
         // ── Event handler attributes ──────────────────────────────────────────
         // NOTE: addEventListener()-based listeners (React onClick, Vue @click compiled,
-        // vanilla JS) are invisible to DOM attribute scanning. browser-use detects them
-        // via CDP getEventListeners(). Without CDP we can only catch attribute-style
-        // handlers here — this is a known limitation.
+        // vanilla JS) are invisible to DOM attribute scanning
         for (const attr of el.attributes) {
             if (INTERACTIVE_ATTRS_SET.has(attr.name)) return true;
             if (attr.name.startsWith('on') && attr.name.length > 2) return true;
@@ -264,12 +257,11 @@ export function buildDOMTree(options: {
 
         // ── Icon-size elements with interactive signals ───────────────────────
         // Small elements (10-50px) that have class/role/onclick/aria-label are
-        // likely icon buttons. Mirrors browser-use's icon heuristic.
+        // likely icon buttons.
         {
             const r = el.getBoundingClientRect();
             if (r.width >= 10 && r.width <= 50 && r.height >= 10 && r.height <= 50) {
                 if (
-                    el.hasAttribute('class') ||
                     el.hasAttribute('role') ||
                     el.hasAttribute('onclick') ||
                     el.hasAttribute('data-action') ||
@@ -298,7 +290,7 @@ export function buildDOMTree(options: {
         return false;
     }
 
-    function getElText(el: Element): string {
+    function getElText(el: Element, skipInnerText: boolean = false): string {
         const tag = el.tagName.toLowerCase();
         if (tag === 'input') {
             const i = el as HTMLInputElement;
@@ -314,6 +306,7 @@ export function buildDOMTree(options: {
         }
         if (tag === 'img') return (el as HTMLImageElement).alt || el.getAttribute('aria-label') || '';
 
+        // Direct child text nodes (most specific)
         const direct = Array.from(el.childNodes)
             .filter(n => n.nodeType === Node.TEXT_NODE)
             .map(n => n.textContent?.trim() || '')
@@ -321,6 +314,13 @@ export function buildDOMTree(options: {
             .join(' ');
         if (direct) return direct.slice(0, 50);
 
+        // aria-label fallback (e.g. icon buttons, option items)
+        const ariaLabel = el.getAttribute('aria-label');
+        if (ariaLabel) return ariaLabel.slice(0, 50);
+
+        // innerText as last resort — skip when element has interactive
+        // children to avoid aggregating their text (causes duplication).
+        if (skipInnerText) return '';
         return ((el as HTMLElement).innerText?.trim() || '').slice(0, 50);
     }
 
@@ -341,7 +341,12 @@ export function buildDOMTree(options: {
 
         // 1. Explicit role attribute takes priority
         const role = el.getAttribute('role');
-        if (role && role !== 'presentation' && role !== 'none') return role;
+        if (role && role !== 'presentation' && role !== 'none') {
+            // For form input elements with an explicit role override, prepend tag
+            // so LLM knows they accept text input (e.g. "input combobox")
+            if (tag === 'input' || tag === 'textarea') return `${tag} ${role}`;
+            return role;
+        }
 
         // 2. Input type mapping
         if (tag === 'input') {
@@ -483,7 +488,6 @@ export function buildDOMTree(options: {
             // If parent is a propagating element (a, button, span role=button, etc.)
             // and this child is sufficiently contained within parent's bounds,
             // mark it excluded — it won't get its own index.
-            // Mirrors browser-use's _apply_bounding_box_filtering.
             let excludedByParent = false;
 
             // EXCEPTION RULES - Keep these even if contained
@@ -561,6 +565,18 @@ export function buildDOMTree(options: {
         return null;
     }
 
+    // Generic container roles that should be skipped when they wrap interactive children.
+    const GENERIC_ROLES = new Set(['div', 'span']);
+
+    /** Check if any descendant is a visible, non-excluded interactive element. */
+    function hasInteractiveDescendant(info: NodeInfo): boolean {
+        for (const child of info.children) {
+            if (child.isInteractive && child.isVisible && !child.excludedByParent) return true;
+            if (hasInteractiveDescendant(child)) return true;
+        }
+        return false;
+    }
+
     /**
      * Serialize a NodeInfo into LLM-friendly text.
      *
@@ -573,8 +589,12 @@ export function buildDOMTree(options: {
      *   [3] [required] textbox "Tên người dùng"
      *   [4] [checked=true] checkbox "Đồng ý"
      *   [5] [scroll] nav "Chat history" (0↑ 1.8↓)
+     *
+     * @param insideRenderedParent - true when an ancestor was rendered as
+     *   interactive (its text is already captured by getElText), so orphan
+     *   text nodes should be suppressed to avoid duplication.
      */
-    function serializeNode(info: NodeInfo): string {
+    function serializeNode(info: NodeInfo, insideRenderedParent: boolean = false): string {
         const lines: string[] = [];
 
         // Determine if this node needs to be rendered
@@ -587,59 +607,74 @@ export function buildDOMTree(options: {
 
         if (!shouldRender) return '';
 
+        let nodeRendered = false;
+
         // Render interactive elements
         // Skip elements excluded by bounding-box propagation filtering.
         if (info.isInteractive && info.isVisible && !info.excludedByParent) {
-            const idx = interactiveIdx++;
-            interactiveCount.value++;
-            info.el.setAttribute('data-ba-idx', String(idx));
-
             const role = resolveRole(info.el);
-            const text = getElText(info.el);
-            const stateFlags = resolveStateFlags(info.el);
+            const hasIntChildren = hasInteractiveDescendant(info);
 
-            // Build: [idx] [scroll]? [flags]? role href? "text"
-            let line = `[${idx}]`;
+            // Skip generic containers (div, span) that wrap interactive children.
+            // These are just wrappers — let their children speak for themselves.
+            const skipGeneric = GENERIC_ROLES.has(role) && hasIntChildren;
 
-            // Scroll marker
-            if (info.isScrollable) line += ' [scroll]';
+            if (!skipGeneric) {
+                const idx = interactiveIdx++;
+                interactiveCount.value++;
+                info.el.setAttribute('data-ba-idx', String(idx));
 
-            // State flags before role
-            if (stateFlags) line += ` ${stateFlags}`;
+                const stateFlags = resolveStateFlags(info.el);
 
-            // Role
-            line += ` ${role}`;
+                // Suppress text for elements with interactive children — their
+                // getElText() uses innerText which aggregates descendant text,
+                // duplicating what children will show individually.
+                const text = getElText(info.el, hasIntChildren);
 
-            // Href for links (inline after role)
-            if (info.tag === 'a') {
-                const href = info.el.getAttribute('href');
-                if (href) {
-                    const cappedHref = href.length > 80 ? href.slice(0, 80) + '...' : href;
-                    line += ` ${cappedHref}`;
+                // Build: [idx] [scroll]? [flags]? role href? "text"
+                let line = `[${idx}]`;
+
+                // Scroll marker
+                if (info.isScrollable) line += ' [scroll]';
+
+                // State flags before role
+                if (stateFlags) line += ` ${stateFlags}`;
+
+                // Role
+                line += ` ${role}`;
+
+                // Href for links (inline after role)
+                if (info.tag === 'a') {
+                    const href = info.el.getAttribute('href');
+                    if (href) {
+                        const cappedHref = href.length > 80 ? href.slice(0, 80) + '...' : href;
+                        line += ` ${cappedHref}`;
+                    }
                 }
-            }
 
-            // Display text
-            if (text) {
-                const cappedText = text.length > 50 ? text.slice(0, 50) + '...' : text;
-                line += ` "${cappedText}"`;
-            }
-
-            // Scroll info
-            if (info.isScrollable) {
-                const scrollEl = info.el;
-                const pagesBelow = scrollEl.clientHeight > 0
-                    ? Math.round((scrollEl.scrollHeight - scrollEl.clientHeight - scrollEl.scrollTop) / scrollEl.clientHeight * 10) / 10
-                    : 0;
-                const pagesAbove = scrollEl.clientHeight > 0
-                    ? Math.round(scrollEl.scrollTop / scrollEl.clientHeight * 10) / 10
-                    : 0;
-                if (pagesBelow > 0 || pagesAbove > 0) {
-                    line += ` (${pagesAbove}↑ ${pagesBelow}↓)`;
+                // Display text
+                if (text) {
+                    const cappedText = text.length > 50 ? text.slice(0, 50) + '...' : text;
+                    line += ` "${cappedText}"`;
                 }
-            }
 
-            lines.push(line);
+                // Scroll info
+                if (info.isScrollable) {
+                    const scrollEl = info.el;
+                    const pagesBelow = scrollEl.clientHeight > 0
+                        ? Math.round((scrollEl.scrollHeight - scrollEl.clientHeight - scrollEl.scrollTop) / scrollEl.clientHeight * 10) / 10
+                        : 0;
+                    const pagesAbove = scrollEl.clientHeight > 0
+                        ? Math.round(scrollEl.scrollTop / scrollEl.clientHeight * 10) / 10
+                        : 0;
+                    if (pagesBelow > 0 || pagesAbove > 0) {
+                        line += ` (${pagesAbove}↑ ${pagesBelow}↓)`;
+                    }
+                }
+
+                lines.push(line);
+                nodeRendered = true;
+            }
         } else if (info.isScrollable && info.isVisible) {
             // Non-interactive scrollable container — still gets an index for scroll targeting
             const idx = interactiveIdx++;
@@ -647,7 +682,8 @@ export function buildDOMTree(options: {
             info.el.setAttribute('data-ba-idx', String(idx));
 
             const role = resolveRole(info.el);
-            const text = getElText(info.el);
+            const hasIntChildren = hasInteractiveDescendant(info);
+            const text = hasIntChildren ? '' : getElText(info.el);
 
             let line = `[${idx}] [scroll] ${role}`;
 
@@ -668,18 +704,25 @@ export function buildDOMTree(options: {
             }
 
             lines.push(line);
+            nodeRendered = true;
         }
 
-        // Render text nodes (flat, no indentation)
-        for (const text of info.textNodes) {
-            if (text.length > 1) {
-                lines.push(text);
+        // Render orphan text nodes ONLY if:
+        // - This node was NOT rendered (its text isn't captured by getElText)
+        // - AND we're not inside a rendered parent (to avoid duplication)
+        if (!nodeRendered && !insideRenderedParent) {
+            for (const text of info.textNodes) {
+                if (text.length > 1) {
+                    lines.push(text);
+                }
             }
         }
 
-        // Render children (flat, no depth tracking)
+        // Render children — pass insideRenderedParent=true if this node was rendered,
+        // so descendant text nodes are suppressed (already in getElText).
+        const childFlag = nodeRendered || insideRenderedParent;
         for (const child of info.children) {
-            const childText = serializeNode(child);
+            const childText = serializeNode(child, childFlag);
             if (childText) lines.push(childText);
         }
 

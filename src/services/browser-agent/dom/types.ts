@@ -1,5 +1,5 @@
 // Browser Agent - DOM Module Types
-// Data models for DOM analysis, adapted from browser-use's views.py
+// Data models for DOM analysis
 // These types are used in both background script and page context.
 
 // ============================================================
@@ -8,7 +8,6 @@
 
 /**
  * Bounding rectangle of a DOM element.
- * Equivalent to browser-use's DOMRect.
  */
 export interface DOMRect {
     x: number;
@@ -19,7 +18,6 @@ export interface DOMRect {
 
 /**
  * DOM Node types (matches DOM specification).
- * Equivalent to browser-use's NodeType enum.
  */
 export const enum NodeType {
     ELEMENT_NODE = 1,
@@ -35,7 +33,7 @@ export const enum NodeType {
 // ============================================================
 
 /**
- * Enhanced DOM tree node — adapted from browser-use's EnhancedDOMTreeNode.
+ * Enhanced DOM tree node
  * Stripped of CDP-specific fields (AX tree, DOMSnapshot, backend_node_id).
  * All data is obtained from live DOM APIs.
  */
@@ -89,7 +87,6 @@ export interface DOMNode {
 
 /**
  * Simplified tree node for optimization before serialization.
- * Equivalent to browser-use's SimplifiedNode.
  */
 export interface SimplifiedNode {
     /** Reference to the original DOMNode */
@@ -120,7 +117,6 @@ export interface SimplifiedNode {
 
 /**
  * Attributes to include when serializing DOM tree for LLM.
- * Adapted from browser-use's DEFAULT_INCLUDE_ATTRIBUTES.
  * Removed AX-tree specific attributes (ax_name, valuenow, etc.)
  */
 export const DEFAULT_INCLUDE_ATTRIBUTES: string[] = [
@@ -202,7 +198,6 @@ export const SKIP_TEXT_TAGS = new Set([
 
 /**
  * SVG child elements to skip (decorative only).
- * Equivalent to browser-use's SVG_ELEMENTS.
  */
 export const SVG_ELEMENTS = new Set([
     'path', 'rect', 'g', 'circle', 'ellipse', 'line', 'polyline',
@@ -247,7 +242,6 @@ export interface ScrollInfo {
 
 /**
  * Propagating bounds from parent interactive element.
- * Equivalent to browser-use's PropagatingBounds.
  */
 export interface PropagatingBounds {
     tag: string;
@@ -286,7 +280,6 @@ export interface DOMAnalysisResult {
 
 /**
  * Markdown chunk for structured page content.
- * Equivalent to browser-use's MarkdownChunk.
  */
 export interface MarkdownChunk {
     content: string;
