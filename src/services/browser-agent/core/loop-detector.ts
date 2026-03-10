@@ -18,7 +18,6 @@ function djb2Hash(str: string): string {
 
 /**
  * Normalize action parameters for similarity hashing.
- * Same logic as browser-use: normalize by action type.
  */
 function normalizeActionForHash(toolName: string, params: Record<string, any>): string {
     if (toolName === 'navigate') {

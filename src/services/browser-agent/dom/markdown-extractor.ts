@@ -1,6 +1,5 @@
 // Browser Agent - Markdown Extractor
 // Extract clean markdown text from page content and chunk it for LLM consumption.
-// Adapted from browser-use's markdown_extractor.py.
 // Runs in page context via chrome.scripting.executeScript.
 
 // ============================================================
@@ -148,7 +147,7 @@ export function extractMarkdown(
     // Clean up whitespace
     text = text.replace(/\n{3,}/g, '\n\n').trim();
 
-    // Remove JSON blobs (adapted from browser-use's _preprocess_markdown_content)
+    // Remove JSON blobs
     text = text.replace(/\{[^{}]{200,}\}/g, '[JSON object removed]');
 
     if (text.length > maxLength) {
@@ -164,7 +163,6 @@ export function extractMarkdown(
 
 /**
  * Block types for atomic markdown parsing.
- * Adapted from browser-use's _BlockType.
  */
 const enum BlockType {
     HEADER,
@@ -184,7 +182,6 @@ interface AtomicBlock {
 
 /**
  * Split markdown into structure-aware chunks.
- * Adapted from browser-use's chunk_markdown_by_structure.
  *
  * Algorithm:
  *   1. Parse atomic blocks (headers, code fences, tables, list items, paragraphs)
@@ -275,7 +272,6 @@ export function chunkMarkdownByStructure(
 
 /**
  * Parse markdown content into atomic blocks that should not be split.
- * Adapted from browser-use's _parse_atomic_blocks.
  */
 function parseAtomicBlocks(content: string): AtomicBlock[] {
     const lines = content.split('\n');
