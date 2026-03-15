@@ -185,6 +185,14 @@ export function buildDOMTree(options: {
         return (xOverlap * yOverlap) / childArea >= threshold;
     }
 
+    /**
+     * Slice text to a maximum length and add ellipsis if needed.
+     */
+    function capText(text: string, max: number = 50): string {
+        if (!text) return '';
+        return text.length > max ? text.slice(0, max) + '...' : text;
+    }
+
     function isInteractive(el: Element): boolean {
         const tag = el.tagName.toLowerCase();
 
@@ -320,18 +328,18 @@ export function buildDOMTree(options: {
             .map(n => n.textContent?.trim() || '')
             .filter(t => t.length > 0)
             .join(' ');
-        if (direct) return direct.slice(0, 50);
+        if (direct) return capText(direct, 50);
 
         // innerText — skip when element has interactive children
         // to avoid aggregating their text (causes duplication).
         if (!skipInnerText) {
-            const inner = ((el as HTMLElement).innerText?.trim() || '').slice(0, 50);
-            if (inner) return inner;
+            const inner = (el as HTMLElement).innerText?.trim() || '';
+            if (inner) return capText(inner, 50);
         }
 
         // aria-label as last resort (e.g. icon-only buttons with no visible text)
         const ariaLabel = el.getAttribute('aria-label');
-        if (ariaLabel) return ariaLabel.slice(0, 50);
+        if (ariaLabel) return capText(ariaLabel, 50);
 
         return '';
     }
@@ -549,7 +557,7 @@ export function buildDOMTree(options: {
                         if (vis && !VALUE_TAGS.has(tag)) {
                             const text = child.textContent?.trim();
                             if (text && text.length > 0) {
-                                textNodes.push(text.slice(0, 50));
+                                textNodes.push(capText(text, 50));
                             }
                         }
                     } else {
@@ -659,15 +667,13 @@ export function buildDOMTree(options: {
                 if (info.tag === 'a') {
                     const href = info.el.getAttribute('href');
                     if (href) {
-                        const cappedHref = href.length > 80 ? href.slice(0, 80) + '...' : href;
-                        line += ` ${cappedHref}`;
+                        line += ` ${capText(href, 80)}`;
                     }
                 }
 
                 // Display text
                 if (text) {
-                    const cappedText = text.length > 50 ? text.slice(0, 50) + '...' : text;
-                    line += ` "${cappedText}"`;
+                    line += ` "${capText(text, 50)}"`;
                 }
 
                 // Scroll info
@@ -700,8 +706,7 @@ export function buildDOMTree(options: {
             let line = `[${idx}] [scroll] ${role}`;
 
             if (text) {
-                const cappedText = text.length > 50 ? text.slice(0, 50) + '...' : text;
-                line += ` "${cappedText}"`;
+                line += ` "${capText(text, 50)}"`;
             }
 
             const scrollEl = info.el;

@@ -187,7 +187,7 @@ export class BrowserAgentRunner {
                         }
                     }
 
-                    const results = await this.executeActions(brain.action);
+                    const results = await this.executeActions(brain.action, browserState.elementsText);
                     this.state.lastResult = results;
 
                     // Wait for page stability after page-changing actions
@@ -356,7 +356,23 @@ export class BrowserAgentRunner {
     // Action Execution
     // ============================================================
 
-    private async executeActions(actions: AgentAction[]): Promise<AgentActionResult[]> {
+    private getLabelForIndex(index: number, elementsText: string): string | undefined {
+        const lines = elementsText.split('\n');
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith(`[${index}] `) || trimmed === `[${index}]`) {
+                const quoteMatch = trimmed.match(/"([^"]+)"/);
+                if (quoteMatch) return quoteMatch[1];
+                
+                const parts = trimmed.substring(`[${index}]`.length).trim().split(/\s+/);
+                const roleToken = parts.find(p => !p.startsWith('[') && !p.startsWith('('));
+                if (roleToken) return `<${roleToken}>`;
+            }
+        }
+        return undefined;
+    }
+
+    private async executeActions(actions: AgentAction[], elementsText?: string): Promise<AgentActionResult[]> {
         const results: AgentActionResult[] = [];
 
         for (let i = 0; i < actions.length; i++) {
@@ -365,6 +381,10 @@ export class BrowserAgentRunner {
             if (entries.length === 0) continue;
 
             const [toolName, params] = entries[0];
+
+            if (params && typeof params.index === 'number' && elementsText) {
+                params.elementLabel = this.getLabelForIndex(params.index, elementsText);
+            }
 
             this.emitEvent('agent:action-executed', {
                 step: this.state.nSteps,

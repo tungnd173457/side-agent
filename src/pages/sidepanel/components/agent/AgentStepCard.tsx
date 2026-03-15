@@ -59,13 +59,18 @@ function formatActionText(action: AgentStepAction): string {
         case 'get-elements':
             return 'Get interactive elements';
         case 'click-element':
+            if (params?.elementLabel) return `Click: ${params.elementLabel}`;
             if (params?.index) return `Click element #${params.index}`;
             if (params?.coordinateX) return `Click at (${params.coordinateX}, ${params.coordinateY})`;
             return `Click: ${params?.selector || '...'}`;
-        case 'type-text':
-            return `Set input to "${(params?.text || '').slice(0, 40)}${(params?.text || '').length > 40 ? '...' : ''}"`;
-        case 'scroll':
-            return `Scroll ${params?.direction || 'down'}`;
+        case 'type-text': {
+            const label = params?.elementLabel ? ` in ${params.elementLabel}` : '';
+            return `Type "${(params?.text || '').slice(0, 40)}${(params?.text || '').length > 40 ? '...' : ''}"${label}`;
+        }
+        case 'scroll': {
+            const label = params?.elementLabel ? ` in ${params.elementLabel}` : '';
+            return `Scroll ${params?.direction || 'down'}${label}`;
+        }
         case 'send-keys':
             return `Send keys: ${params?.keys || '...'}`;
         case 'search-page':
