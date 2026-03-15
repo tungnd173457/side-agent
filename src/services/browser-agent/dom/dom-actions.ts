@@ -657,5 +657,45 @@ export function fillFormFields(fields: Record<string, string>): {
 }
 
 // ============================================================
+// DOM Fingerprint
+// ============================================================
+
+/**
+ * Capture a lightweight fingerprint of interactive DOM elements.
+ * Used to detect meaningful page changes (not full DOM serialization).
+ * Runs in page context — must be fully self-contained (no imports).
+ */
+export function captureInteractiveDOMFingerprint(): string {
+    const selector = 'a, button, input, textarea, select, [role]';
+    const elements = document.querySelectorAll(selector);
+    const parts: string[] = [];
+
+    for (let i = 0; i < elements.length; i++) {
+        const el = elements[i] as HTMLElement;
+
+        // Skip hidden elements
+        if (el.offsetParent === null && el.tagName.toLowerCase() !== 'body') continue;
+
+        const tag = el.tagName.toLowerCase();
+        const text = (el.textContent || '').trim().slice(0, 50);
+        const id = el.id || '';
+        const cls = el.className && typeof el.className === 'string'
+            ? el.className.slice(0, 40)
+            : '';
+        const role = el.getAttribute('role') || '';
+
+        parts.push(`${tag}|${id}|${cls}|${role}|${text}`);
+    }
+
+    // djb2 hash of concatenated parts
+    const str = parts.join('\n');
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) + hash + str.charCodeAt(i)) & 0xffffffff;
+    }
+    return hash.toString(36);
+}
+
+// ============================================================
 // Internal helpers (inlined for page context self-containment)
 // ============================================================
