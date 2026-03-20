@@ -57,7 +57,7 @@ export function buildDOMTree(options: {
 
     const INTERACTIVE_ATTRS_SET = new Set([
         'onclick', 'onmousedown', 'onmouseup', 'onkeydown', 'onkeyup', 'ontouchstart',
-        'tabindex', 'ng-click', 'v-on:click', '@click', 'data-action',
+        'tabindex', 'ng-click', 'v-on:click', '@click',
         'data-onclick', 'jsaction', '(click)', 'data-ng-click', 'data-ember-action',
     ]);
 
@@ -235,19 +235,13 @@ export function buildDOMTree(options: {
         if ((tag === 'span' || tag === 'div') && hasFormControl(el, 2)) return true;
 
         // ── Search element heuristic ──────────────────────────────────────────
+        // Only check class/id — scanning all data-* values is too broad
+        // and causes false positives on elements like data-action="show-all-offers-display"
         {
             const cls = (el.getAttribute('class') || '').toLowerCase();
             const id = (el.getAttribute('id') || '').toLowerCase();
             for (const indicator of SEARCH_INDICATORS_SET) {
                 if (cls.includes(indicator) || id.includes(indicator)) return true;
-            }
-            for (const attr of el.attributes) {
-                if (attr.name.startsWith('data-') && attr.value) {
-                    const v = attr.value.toLowerCase();
-                    for (const indicator of SEARCH_INDICATORS_SET) {
-                        if (v.includes(indicator)) return true;
-                    }
-                }
             }
         }
 
@@ -280,7 +274,6 @@ export function buildDOMTree(options: {
                 if (
                     el.hasAttribute('role') ||
                     el.hasAttribute('onclick') ||
-                    el.hasAttribute('data-action') ||
                     el.hasAttribute('aria-label')
                 ) {
                     return true;
@@ -300,7 +293,12 @@ export function buildDOMTree(options: {
         if (depth <= 0) return false;
         for (const child of el.children) {
             const t = child.tagName.toLowerCase();
-            if (t === 'input' || t === 'select' || t === 'textarea') return true;
+            if (t === 'select' || t === 'textarea') return true;
+            if (t === 'input') {
+                // Hidden inputs are not user-interactive form controls
+                const type = (child.getAttribute('type') || 'text').toLowerCase();
+                if (type !== 'hidden') return true;
+            }
             if (hasFormControl(child, depth - 1)) return true;
         }
         return false;
@@ -511,17 +509,28 @@ export function buildDOMTree(options: {
             let excludedByParent = false;
 
             // EXCEPTION RULES - Keep these even if contained
-            const isContainmentException =
-                tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'label' ||
-                isPropagating ||
-                el.hasAttribute('onclick') ||
-                (el.getAttribute('aria-label') || '').trim().length > 0 ||
-                ['button', 'link', 'checkbox', 'radio', 'tab', 'menuitem', 'option'].includes(elRole || '');
+            const isFormControl = tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'label';
+            const isActionOrAria = el.hasAttribute('onclick') || (el.getAttribute('aria-label') || '').trim().length > 0;
+            const isRoleOrPropagating = isPropagating || ['button', 'link', 'checkbox', 'radio', 'tab', 'menuitem', 'option'].includes(elRole || '');
+            
+            const isContainmentException = isFormControl || isActionOrAria || isRoleOrPropagating;
 
-            if (activeBounds && vis && !isContainmentException) {
+            if (activeBounds && vis) {
                 const childRect = el.getBoundingClientRect();
                 if (isContainedInBounds(childRect, activeBounds, CONTAINMENT_THRESHOLD)) {
-                    excludedByParent = true;
+                    if (!isContainmentException) {
+                        excludedByParent = true;
+                    } else if (!isFormControl && !isActionOrAria && isRoleOrPropagating) {
+                        // It is an exception ONLY because it has a redundant role or is a
+                        // propagating tag (like `<a>` inside `<a>`, or `<div role="button">` inside `<a>`).
+                        // If it essentially covers the same area as the active bounds (> 80%),
+                        // it's just a redundant wrapper and should be excluded.
+                        const activeArea = activeBounds.width * activeBounds.height;
+                        const childArea = childRect.width * childRect.height;
+                        if (activeArea > 0 && (childArea / activeArea) > 0.8) {
+                            excludedByParent = true;
+                        }
+                    }
                 }
             }
 
